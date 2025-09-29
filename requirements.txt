@@ -1,0 +1,50 @@
+This project is primarily built using a Node.js-based workflow engine (n8n)
+
+
+​and a browser-hosted React application (via CDNs).
+
+
+​This file lists the essential software components and APIs required for the entire system to function.
+
+
+​=== BACKEND (n8n Workflow Engine) ===
+
+
+​The core automation engine:
+
+
+​n8n (Self-Hosted or Cloud Instance)
+
+
+​Mandatory API Dependency for AI processing:
+
+
+​Anthropic-API (Required for Claude-3-5-Sonnet access)
+
+
+​External API for Legal Data Grounding (Requires separate configuration/credentials):
+
+
+​Legal-Data-API (Mocked as LawPavilion in the workflow)
+
+
+​=== FRONTEND (Client-side, browser-based) ===
+
+
+​Libraries loaded via CDN, but essential for the PWA:
+
+
+​react@18
+
+
+react-dom@18
+
+
+@babel/standalone (for client-side JSX compilation)
+
+
+tailwindcss (for styling)
+
+
+lucide-react (for icons)
+
