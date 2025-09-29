@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lex: NaijaLawGPT</title>
+    <!-- Load Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load React, ReactDOM, and Babel CDNs -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Custom Styles and Font -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        .font-sans { font-family: 'Inter', sans-serif; }
+        .legal-gradient { background: linear-gradient(135deg, #1f2937 0%, #374151 100%); }
+        .teal-glow { box-shadow: 0 0 15px rgba(20, 184, 166, 0.5); }
+        .text-indigo-700 { color: #4338CA; } /* Deep Indigo */
+        /* Ensure HTML and body take full height for proper centering on mobile */
+        html, body, #root { height: 100%; }
+        body { margin: 0; }
+    </style>
+</head>
+<body class="font-sans">
+    <!-- The root element where React will mount the App -->
+    <div id="root"></div>
+
+    <!-- The React/JSX code goes here, interpreted by Babel -->
+    <script type="text/babel">
+        // Importing Lucide icons directly from their JS source
+        // Note: In this single-file setup, we define components manually from the global scope.
+        const { Briefcase, Send, CheckCircle, Loader, Shield, User, Search, FileText, BarChart, XCircle } = lucide;
+
+        // --- CONFIGURATION ---
+        const WEBHOOK_URL = "https://n8n.legalassistant.ng/webhook/legal-assistant";
+        const API_KEY = ""; 
+
+        /**
+         * Helper function to simulate basic Markdown to JSX conversion
+         */
+        const renderMarkdown = (text) => {
+            if (!text) return null;
+
+            // Split text by newlines to process paragraphs and lists
+            const lines = text.split('\n');
+            let content = [];
+            let inList = false;
+
+            lines.forEach((line, index) => {
+                const key = `line-${index}`;
+                
+                // Handle Headings (##)
+                if (line.startsWith('##')) {
+                    content.push(<h2 key={key} className="text-xl font-bold mt-4 mb-2 text-indigo-700">{line.substring(2).trim()}</h2>);
+                } 
+                // Handle Lists (-)
+                else if (line.trim().startsWith('-')) {
+                    if (!inList) {
+                        content.push(<ul key={`ul-start-${index}`} className="list-disc pl-5 space-y-1 text-gray-700">);
+                        inList = true;
+                    }
+                    content.push(<li key={key} className="text-sm">{line.substring(1).trim()}</li>);
+                } 
+                // Handle paragraphs (including bold/italics in the line)
+                else {
+                    if (inList) {
+                        content.push(</ul>);
+                        inList = false;
+                    }
+                    // Simple replacement for bold and italic
+                    let processedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    processedLine = processedLine.replace(/\*(.*?)\*/g, '<em>$1</em>');
+                    
+                    // Render as a paragraph, using dangerouslySetInnerHTML for the basic HTML tags
+                    content.push(<p key={key} className="mt-2 text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: processedLine }} />);
+                }
+            });
+
+            if (inList) {
+                content.push(</ul>);
+            }
+            
+            return <div className="markdown-output">{content}</div>;
+        };
+
+        /**
+         * Custom Spinner Component
+         */
+        const LoadingSpinner = () => (
+          <div className="flex flex-col items-center justify-center p-6 bg-indigo-50 rounded-lg border border-indigo-200">
+            <Loader className="w-6 h-6 animate-spin text-indigo-600 mb-2" />
+            <span className="text-sm font-semibold text-indigo-700">Processing command with NaijaLawGPT...</span>
+            <span className="text-xs text-gray-500 mt-1">Fetching data, running AI workflow, and auditing logs.</span>
+          </div>
+        );
+
+        /**
+         * Segmented Control for Command Type Selection
+         */
+        const CommandSelector = ({ commandType, setCommandType }) => {
+          const types = [
+            { id: 'research', label: 'Legal Research', icon: Search, description: 'Find case law & statutes.' },
+            { id: 'drafting', label: 'Document Drafting', icon: FileText, description: 'Generate contracts & agreements.' },
+            { id: 'analytics', label: 'Data Analytics', icon: BarChart, description: 'Analyze court trends (Opt-in).' },
+          ];
+
+          return (
+            <div className="flex flex-col space-y-2 mb-4">
+              <label className="block text-sm font-semibold text-gray-700">Select Task Type</label>
+              <div className="grid grid-cols-3 gap-2 p-1 bg-gray-100 rounded-xl shadow-inner">
+                {types.map((type) => {
+                  const isSelected = commandType === type.id;
+                  return (
+                    <button
+                      key={type.id}
+                      onClick={() => setCommandType(type.id)}
+                      className={`flex flex-col items-center p-3 rounded-lg transition-all duration-200 text-center
+                        ${isSelected 
+                          ? 'bg-white shadow-md text-indigo-700 ring-2 ring-indigo-500 transform scale-105' 
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-indigo-600'
+                        }`}
+                    >
+                      <type.icon className="w-5 h-5 mb-1" />
+                      <span className="text-xs font-medium">{type.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-gray-500 mt-1 pl-1">
+                **Tip:** {types.find(t => t.id === commandType)?.description || 'Choose a task to get started.'}
+              </p>
+            </div>
+          );
+        };
+
+        /**
+         * The main application component for the Virtual AI Legal Assistant (Lex).
+         */
+        const App = () => {
+          const [query, setQuery] = React.useState('');
+          const [userId, setUserId] = React.useState(`user-${Math.random().toString(36).substring(2, 9)}`);
+          const [consent, setConsent] = React.useState(false);
+          const [result, setResult] = React.useState(null);
+          const [isLoading, setIsLoading] = React.useState(false);
+          const [error, setError] = React.useState(null);
+          const [commandType, setCommandType] = React.useState('research'); 
+
+          // Utility to handle API calls with exponential backoff
+          const makeApiCall = React.useCallback(async (data, retries = 3, delay = 1000) => {
+            try {
+              const response = await fetch(WEBHOOK_URL, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-api-key': API_KEY,
+                },
+                body: JSON.stringify(data),
+              });
+
+              if (!response.ok) {
+                if (response.status === 429 && retries > 0) {
+                  console.log(`Rate limit hit, retrying in ${delay / 1000}s...`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                  return makeApiCall(data, retries - 1, delay * 2);
+                }
+                throw new Error(`HTTP error! Status: ${response.status}`);
+              }
+
+              const jsonResponse = await response.json();
+
+              if (jsonResponse.error) {
+                 throw new Error(jsonResponse.error);
+              }
+
+              return jsonResponse;
+
+            } catch (err) {
+              console.error('API Call Failed:', err);
+              throw new Error(`Failed to process request: ${err.message}`);
+            }
+          }, []);
+
+          const handleSubmit = async (e) => {
+            e.preventDefault();
+            setError(null);
+            setResult(null);
+
+            if (!consent) {
+              setError("NDPR Compliance requires explicit user consent before proceeding.");
+              return;
+            }
+            if (!query.trim()) {
+                setError("Please enter a legal query or command.");
+                return;
+            }
+
+            setIsLoading(true);
+
+            const commandPayload = {
+              user_id: userId,
+              command: query,
+              platform: 'pwa',
+              return_channel: 'pwa-display',
+              consent: consent,
+              command_type: commandType
+            };
+
+            try {
+              const initialResponse = await makeApiCall(commandPayload);
+
+              // Simulate the asynchronous response time and content
+              await new Promise(resolve => setTimeout(resolve, 3500)); 
+
+              let mockOutput;
+              if (commandType === 'drafting') {
+                mockOutput = `**Drafted Document: Simple Tenancy Agreement (Lagos Law)**\n\n## Parties\n- **Landlord:** Mr. Kunle Adebayo\n- **Tenant:** Ms. Tolu Okoro\n\n## Terms\n- **Duration:** 12 months, commencing January 1, 2025.\n- **Rent:** ₦800,000 per annum.\n- **Notice:** 30 days notice required for termination, as per Lagos Tenancy Law 2011.\n\n## Governing Law\nThis agreement is governed by the laws of the Federal Republic of Nigeria, and specifically the Lagos State Tenancy Law 2011.\n\n*Verify this draft with a certified Nigerian lawyer before execution.*`;
+              } else if (commandType === 'analytics') {
+                mockOutput = `## Lagos High Court Dispute Trends (Q3 2024)\n- **Total Cases Analyzed:** 580\n- **Top Case Category:** Commercial Litigation (35%)\n- **Win Rate by Outcome:**\n  - Favorable to Claimant: 45%\n  - Favorable to Defendant: 38%\n  - Settled/Dismissed: 17%\n\n*Insight: Commercial dispute volume increased 12% Q-o-Q, suggesting higher demand for arbitration.*`;
+              } else { // research
+                 mockOutput = `## Tenancy Disputes in Lagos (Research Summary)\n- ***Adeyemi v. Olusegun (2023) 4 NWLR 215***: Confirmed that a 30-day notice is the minimum required for a monthly tenancy in Lagos, citing Section 24 of the Lagos Tenancy Law 2011.\n- ***Okonkwo v. Fashola (2024) 5 SC 110***: Set the precedent that tenant abandonment requires judicial confirmation before a landlord can repossess.\n\n*Source:* LawPavilion Corpus. Always verify with primary statutory and case sources.`;
+              }
+
+
+              const mockFinalResult = {
+                title: `${commandType.toUpperCase()} RESULT`,
+                request: query,
+                output: initialResponse.status === 'success' ? mockOutput : `Initial response failed: ${initialResponse.message}`,
+              };
+
+              setResult(mockFinalResult);
+
+            } catch (err) {
+              setError(err.message);
+            } finally {
+              setIsLoading(false);
+            }
+          };
+
+          return (
+            <div className="min-h-screen bg-gray-50 p-4 sm:p-6 flex flex-col items-center">
+              <div className="w-full max-w-xl">
+                {/* Header */}
+                <header className="legal-gradient text-white p-6 rounded-3xl shadow-2xl mb-6 flex justify-between items-center">
+                  <div className="flex items-center space-x-3">
+                    <Briefcase className="w-8 h-8 text-teal-400 teal-glow p-1 rounded-full" />
+                    <h1 className="text-3xl font-extrabold tracking-tight">Lex: NaijaLawGPT</h1>
+                  </div>
+                </header>
+
+                {/* User Input Form */}
+                <form onSubmit={handleSubmit} className="bg-white p-6 rounded-3xl shadow-xl border border-gray-200">
+                  <CommandSelector commandType={commandType} setCommandType={setCommandType} />
+
+                  <div className="space-y-6">
+                     {/* User ID Display */}
+                    <div className="flex items-center space-x-2 p-3 bg-indigo-50 border-l-4 border-indigo-500 rounded-xl text-sm text-gray-700">
+                        <User className="w-4 h-4 text-indigo-700"/>
+                        <span className="font-semibold">Current User ID:</span>
+                        <span className="truncate">{userId}</span>
+                    </div>
+
+                    {/* Query Input */}
+                    <div>
+                      <label htmlFor="query" className="block text-sm font-semibold text-gray-700 mb-2">
+                        Your Legal Command
+                      </label>
+                      <textarea
+                        id="query"
+                        rows="4"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder={
+                          commandType === 'research' ? 'E.g., Find recent case law on intellectual property infringement in Nigeria.' :
+                          commandType === 'drafting' ? 'E.g., Draft a joint venture agreement for two SME tech companies in Abuja.' :
+                          'E.g., Analyze trends for land dispute outcomes in Rivers State over the last 3 years.'
+                        }
+                        disabled={isLoading}
+                        className="w-full p-4 border-2 border-gray-300 rounded-xl focus:ring-teal-500 focus:border-teal-500 resize-none transition duration-200 text-base"
+                      />
+                    </div>
+
+                    {/* NDPR Consent Checkbox */}
+                    <div className="flex items-start bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                      <input
+                        id="consent"
+                        type="checkbox"
+                        checked={consent}
+                        onChange={(e) => setConsent(e.target.checked)}
+                        disabled={isLoading}
+                        className="h-5 w-5 text-teal-600 border-gray-300 rounded-md mt-0.5"
+                      />
+                      <label htmlFor="consent" className="ml-3 text-xs text-gray-700 font-medium leading-tight cursor-pointer">
+                        <Shield className="inline w-4 h-4 mr-1 text-teal-600"/> I consent to my data being processed and stored for audit logging as required by **NDPR** (Nigerian Data Protection Regulation).
+                      </label>
+                    </div>
+
+                    {/* Submit Button */}
+                    <button
+                      type="submit"
+                      disabled={isLoading || !consent || !query.trim()}
+                      className="w-full flex items-center justify-center space-x-2 py-4 px-4 border border-transparent text-lg font-bold rounded-xl text-white bg-indigo-600 shadow-lg shadow-indigo-300/50 hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-offset-2 transition duration-150 disabled:opacity-50 disabled:shadow-none"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader className="w-5 h-5 animate-spin" />
+                          <span>Executing Command...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-5 h-5" />
+                          <span>Run Lex Workflow</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Status/Result Display */}
+                <div className="mt-8">
+                  {error && (
+                    <div className="bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-xl shadow-md flex items-start space-x-3 transition-opacity duration-300">
+                      <XCircle className="w-5 h-5 text-red-600 mt-1" />
+                      <div>
+                        <p className="font-bold">Execution Error</p>
+                        <p className="text-sm">{error}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {isLoading && <LoadingSpinner />}
+
+                  {result && !isLoading && (
+                    <div className="bg-white p-6 rounded-3xl shadow-2xl border-2 border-teal-400">
+                      <h2 className="text-xl font-bold text-gray-800 flex items-center space-x-2 mb-4 pb-2 border-b border-gray-100">
+                        <CheckCircle className="w-6 h-6 text-teal-500" />
+                        <span>Lex Output: {result.title}</span>
+                      </h2>
+                      <div className="result-content pt-2 space-y-3">
+                         {/* Use the Markdown renderer for professional look */}
+                        {renderMarkdown(result.output)}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            </div>
+          );
+        };
+        
+        // This is where the App component is rendered to the #root element
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+    <!-- Load Lucide icons JS for access to icons in the script above -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</body>
+</html>
+
